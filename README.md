@@ -44,6 +44,10 @@ a staple technique for measuring cell state.[^1] Often it is desirable to use
 statistical techniques to compare these count matrices across different
 experimental conditions to reveal genes that change.[^2]
 
+DESeq2 is a popular tool that accomplishes this by testing statistical differences between gene sets. It is accessible to scientists on Latch Workflows, downstream of nf-core/rnaseq, where they can construct condition groups in a graphical interface and launch their own analysis. The underlying code is accessible and can be downloaded and modified.
+
+Genes with significant changes between conditions are then visualized in downstream dashboards with volcano and MA plots. The underlying Python code that produced these plots can also be accessed and modified.
+
 A software benchmark conducted by Costa Silva et. al revealed
 [DESeq2](https://bioconductor.org/packages/release/bioc/html/DESeq2.html) to be
 the most performant. For each of a list of tools, reported significant genes were
@@ -54,5 +58,5 @@ consistently showed the highest
 ![table](https://user-images.githubusercontent.com/31255434/182885594-e5986335-0f3a-484d-969a-306b02aa9d82.png)
 
 
-[^1]: Stark, Rory; Grzelak, Marta; Hadfield, James (2019). RNA sequencing: the teenage years. Nature Reviews Genetics, (), –. doi:10.1038/s41576-019-0150-2 
+[^1]: Stark, Rory; Grzelak, Marta; Hadfield, James (2019). RNA sequencing: the teenage years. Nature Reviews Genetics, (), –. doi:10.1038/s41576-019-0150-2
 [^2]: Costa-Silva J, Domingues D, Lopes FM (2017) RNA-Seq differential expression analysis: An extended review and a software tool. PLoS ONE 12(12): e0190152. https://doi.org/10.1371/journal.pone.0190152
