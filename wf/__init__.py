@@ -1,33 +1,33 @@
 import csv
-from dataclasses import dataclass
 import functools
 import json
+import re
 import subprocess
 import sys
-from textwrap import dedent
 import typing
 import zipfile
+from dataclasses import dataclass
 from io import SEEK_SET
-import re
 from pathlib import Path
+from textwrap import dedent
 from typing import Annotated, Any, Dict, List, Optional, TextIO, Tuple
 
 from flytekit.core.annotation import FlyteAnnotation
 from latch import medium_task, workflow
 from latch.resources.launch_plan import LaunchPlan
 from latch.types import (
+    Fork,
+    ForkBranch,
+    LatchAuthor,
     LatchDir,
     LatchFile,
     LatchMetadata,
-    LatchAuthor,
     LatchOutputDir,
     LatchParameter,
     LatchRule,
-    Section,
-    Fork,
-    ForkBranch,
-    Text,
     Params,
+    Section,
+    Text,
 )
 from latch.types.metadata import FlowBase
 from openpyxl import load_workbook
@@ -519,9 +519,9 @@ class LatchParameterDeseq2(LatchParameter):
 
         # todo(maximsmol): this should really be added to LatchParameter
         if self.add_button_title is not None:
-            res["__metadata__"].setdefault("appearance", {})[
-                "add_button_title"
-            ] = self.add_button_title
+            res["__metadata__"].setdefault("appearance", {})["add_button_title"] = (
+                self.add_button_title
+            )
 
         return res
 
@@ -531,11 +531,10 @@ class LatchParameterDeseq2(LatchParameter):
         display_name="DESeq2 (Differential Expression)",
         author=LatchAuthor(
             name="LatchBio",
-            email="dev@latch.bio",
-            github="https://github.com/latch-verified",
+            github="https://github.com/latchbio-workflows/wf-verified-deseq2",
         ),
-        wiki_url="https://www.latch.wiki/bulk-rna-seq-end-to-end#b2a4c0654d47450396ce094b1c70cb58",
-        documentation="https://www.latch.wiki/bulk-rna-seq-end-to-end#b2a4c0654d47450396ce094b1c70cb58",
+        documentation="https://wiki.latch.bio/workflows/bulk-rna-seq#bulk-rnaseq-quantification",
+        wiki_url="https://wiki.latch.bio/workflows/bulk-rna-seq#bulk-rnaseq-quantification",
         video_tutorial="https://www.loom.com/share/46d44143a3344860b48c2c3a5e566b63",
         no_standard_bulk_execution=True,
         parameters={
@@ -584,23 +583,27 @@ class LatchParameterDeseq2(LatchParameter):
                     single=ForkBranchDeseq2(
                         "Single Table",
                         ["raw_count_table"],
-                        Text(dedent("""
+                        Text(
+                            dedent("""
                                 Table of (pseudo-)counts where columns are samples and rows are genes
                                 - One of the columns must contain gene IDs
                                 - A subset or all of the remaining columns can be used as samples for analysis, depending on the design matrix
-                                """)),
+                                """)
+                        ),
                         Params("raw_count_table", "count_table_gene_id_column"),
                     ),
                     multiple=ForkBranch(
                         "Combine Tables",
-                        Text(dedent("""
+                        Text(
+                            dedent("""
                                 Multiple tables of (pseudo-)counts where columns are samples and rows are genes
                                 - One of the columns must contain gene IDs
                                 - A subset or all of the remaining columns can be used as samples for analysis, depending on the design matrix
                                 - Tables will be merged row-wise (new samples will be added for each gene)
                                 - The first column of each table must be the gene identifier
                                 - The order of genes in each table must be exactly the same
-                                """)),
+                                """)
+                        ),
                         Params("raw_count_tables"),
                     ),
                 ),
@@ -618,9 +621,11 @@ class LatchParameterDeseq2(LatchParameter):
                             "design_matrix_sample_id_column",
                             "design_formula",
                         ],
-                        Text(dedent("""
+                        Text(
+                            dedent("""
                                 Table with sample IDs and experimental conditions
-                                """)),
+                                """)
+                        ),
                         Params(
                             "conditions_table",
                             "design_matrix_sample_id_column",
@@ -637,10 +642,12 @@ class LatchParameterDeseq2(LatchParameter):
                     "",
                     default=ForkBranch(
                         "Default",
-                        Text(dedent("""
+                        Text(
+                            dedent("""
                                 In the data view, under
                                 `/DeSeq2 (Differential Expression)/{Report Name}`
-                                """)),
+                                """)
+                        ),
                     ),
                     custom=ForkBranchDeseq2(
                         "Custom", ["output_location"], Params("output_location")
