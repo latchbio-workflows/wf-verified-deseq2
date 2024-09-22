@@ -14,6 +14,7 @@ from typing import Annotated, Any, Dict, List, Optional, TextIO, Tuple
 
 from flytekit.core.annotation import FlyteAnnotation
 from latch import medium_task, workflow
+from latch.executions import rename_current_execution
 from latch.resources.launch_plan import LaunchPlan
 from latch.types import (
     Fork,
@@ -68,7 +69,7 @@ registry_table_re = re.compile(r"^latch://(\d+)\.table\.registry$")
 
 @medium_task
 def deseq2(
-    report_name: str,
+    run_name: str,
     count_table_source: str = "single",
     raw_count_table: Optional[LatchFile] = None,
     raw_count_tables: List[LatchFile] = [],
@@ -81,7 +82,9 @@ def deseq2(
     design_matrix_sample_id_column: Optional[str] = None,
     design_formula: List[List[str]] = [["condition", "explanatory"]],
     number_of_genes_to_plot: int = 30,
-) -> LatchDir:
+) -> LatchOutputDir:
+    rename_current_execution(str(run_name))
+
     # Hack until proper string conditionals exist on bulk
     if conditions_source == "none":
         return LatchDir("/root/wf")
@@ -170,15 +173,15 @@ def deseq2(
     print(
         ">>> Parameters",
         f"Count table: '{count_table_remote}'",
-        f"Report name: '{report_name}'",
+        f"Report name: '{run_name}'",
         f"Number of Genes: '{str(number_of_genes_to_plot)}'",
         sep="\n",
     )
 
-    output_loc = f"latch:///DESeq2 Results/{report_name.replace('/', '_')}"
+    output_loc = f"latch:///DESeq2 Results/{run_name.replace('/', '_')}"
     if output_location_type == "custom":
         assert output_location is not None
-        output_loc = output_location.remote_path
+        output_loc = f"{output_location.remote_path}/{run_name}"
 
     print(f"Output location: '{output_loc}' [{output_location_type}]")
 
@@ -450,47 +453,78 @@ def deseq2(
 
     level_options = generate_report()
 
-    with (res_p / "Report.deseqreport").open("wb") as f:
-        data_p = res_p / "Data"
-        plots_p = res_p / "Plots"
-        qc_plots_p = plots_p / "QC"
+    # with (res_p / "Report.deseqreport").open("wb") as f:
+    #     data_p = res_p / "Data"
+    #     plots_p = res_p / "Plots"
+    #     qc_plots_p = plots_p / "QC"
 
-        embedded_data = {
-            "_dds": data_p / "dds.rds",
-            "sample_corr": plots_p / "Sample Correlation.html",
-            "counts_heatmap": qc_plots_p / "Counts Heatmap.html",
-            "size_factor_qc": qc_plots_p / "Size Factor QC.html",
-            **{
-                "pca/" + x.with_suffix("").name: x
-                for x in (qc_plots_p / "PCA").iterdir()
-                if x.suffix == ".html"
-            },
+    #     embedded_data = {
+    #         "_dds": data_p / "dds.rds",
+    #         "sample_corr": plots_p / "Sample Correlation.html",
+    #         "counts_heatmap": qc_plots_p / "Counts Heatmap.html",
+    #         "size_factor_qc": qc_plots_p / "Size Factor QC.html",
+    #         **{
+    #             "pca/" + x.with_suffix("").name: x
+    #             for x in (qc_plots_p / "PCA").iterdir()
+    #             if x.suffix == ".html"
+    #         },
+    #     }
+    #     embedded_data_order = sorted([k for k in embedded_data])
+
+    #     json_blob = json.dumps(
+    #         {
+    #             "report_name": run_name,
+    #             "genes": sorted(list(genes)),
+    #             "level_options": level_options,
+    #             "embedded_data_sizes": {
+    #                 k: v.stat().st_size for k, v in embedded_data.items()
+    #             },
+    #             "embedded_data_order": embedded_data_order,
+    #         }
+    #     )
+    #     f.write(len(json_blob).to_bytes(4, "little", signed=False))
+    #     f.write(json_blob.encode("utf-8"))
+
+    #     for k in embedded_data_order:
+    #         x = embedded_data[k]
+    #         with x.open("rb") as fr:
+    #             data = fr.read1()
+    #             while len(data) > 0:
+    #                 f.write(data)
+    #                 data = fr.read1()
+
+    print("Building report")
+    report_artifact_directory = Path(f"{res_p}/{run_name}.artifact")
+    report_artifact_directory.mkdir(exist_ok=True, parents=True)
+
+    json_data = {
+        "bindings": {
+            "plotTemplates": [
+                {
+                    "id": "174",
+                    "widgetValues": {},
+                }
+            ]
         }
-        embedded_data_order = sorted([k for k in embedded_data])
+    }
 
-        json_blob = json.dumps(
-            {
-                "report_name": report_name,
-                "genes": sorted(list(genes)),
-                "level_options": level_options,
-                "embedded_data_sizes": {
-                    k: v.stat().st_size for k, v in embedded_data.items()
-                },
-                "embedded_data_order": embedded_data_order,
-            }
+    if output_location_type == "custom":
+        # json_data["bindings"]["plotTemplates"][0]["widgetValues"].update(
+        #     {"9835/2": {"value": True}, "9835/4": {"value": f"{output_loc}"}}
+        # )
+        json_data["bindings"]["plotTemplates"][0]["widgetValues"].update(
+            {"9835/2": {"value": True}}
         )
-        f.write(len(json_blob).to_bytes(4, "little", signed=False))
-        f.write(json_blob.encode("utf-8"))
+    else:
+        json_data["bindings"]["plotTemplates"][0]["widgetValues"].update(
+            {"9835/1": {"value": f"{run_name}"}}
+        )
 
-        for k in embedded_data_order:
-            x = embedded_data[k]
-            with x.open("rb") as fr:
-                data = fr.read1()
-                while len(data) > 0:
-                    f.write(data)
-                    data = fr.read1()
+    json_file_path = report_artifact_directory / "artifact.json"
+    with open(json_file_path, "w") as json_file:
+        json.dump(json_data, json_file, indent=2)
 
-    return LatchDir(str(res_p.resolve()), remote_path=output_loc)
+    return LatchOutputDir(str(res_p.resolve()), remote_path=output_loc)
 
 
 @dataclass(frozen=True)
@@ -552,8 +586,15 @@ class LatchParameterDeseq2(LatchParameter):
             "count_table_gene_id_column": LatchParameterDeseq2(
                 display_name="Gene ID Column", tmp_hack_deseq2="gene_id_column"
             ),
-            "report_name": LatchParameter(
-                display_name="Report Name", batch_table_column=True
+            "run_name": LatchParameter(
+                display_name="Run Name",
+                batch_table_column=True,
+                rules=[
+                    LatchRule(
+                        regex=r"^[a-zA-Z0-9_-]+$",
+                        message="Run name must contain only letters, digits, underscores, and dashes. No spaces are allowed.",
+                    )
+                ],
             ),
             "output_location_type": LatchParameter(display_name="Output Location"),
             "output_location": LatchParameter(
@@ -636,7 +677,7 @@ class LatchParameterDeseq2(LatchParameter):
             ),
             Section(
                 "Output Settings",
-                Params("report_name"),
+                Params("run_name"),
                 Fork(
                     "output_location_type",
                     "",
@@ -645,12 +686,15 @@ class LatchParameterDeseq2(LatchParameter):
                         Text(
                             dedent("""
                                 In the data view, under
-                                `/DeSeq2 (Differential Expression)/{Report Name}`
+                                `/DeSeq2 (Differential Expression)/{Run Name}`
                                 """)
                         ),
                     ),
                     custom=ForkBranchDeseq2(
-                        "Custom", ["output_location"], Params("output_location")
+                        "Custom",
+                        ["output_location"],
+                        Text("Parent directory for outputs"),
+                        Params("output_location"),
                     ),
                 ),
             ),
@@ -658,7 +702,7 @@ class LatchParameterDeseq2(LatchParameter):
     )
 )
 def deseq2_wf(
-    report_name: str,
+    run_name: str,
     count_table_source: str = "single",
     raw_count_table: Optional[
         Annotated[
@@ -714,7 +758,7 @@ def deseq2_wf(
         ),
     ] = [],
     number_of_genes_to_plot: int = 30,
-) -> LatchDir:
+) -> LatchOutputDir:
     r"""Estimate variance-mean dependence in count data from high-throughput sequencing assays and test for differential expression based on a model using the negative binomial distribution.
 
     Using RNA-seq to generate matrices of transcript and gene abundances has become
@@ -741,7 +785,7 @@ def deseq2_wf(
         raw_count_table=raw_count_table,
         raw_count_tables=raw_count_tables,
         count_table_gene_id_column=count_table_gene_id_column,
-        report_name=report_name,
+        run_name=run_name,
         output_location_type=output_location_type,
         output_location=output_location,
         conditions_source=conditions_source,
@@ -755,35 +799,54 @@ def deseq2_wf(
 
 LaunchPlan(
     deseq2_wf,
-    "(Foote, 2019) Human Fibroblasts",
+    "Test Data",
     dict(
         raw_count_table=LatchFile(
-            "s3://latch-public/welcome/deseq2/galaxy/galaxy_counts.tsv"
+            "s3://latch-public/nf-core/rnaseq/launchplan_data/human_dge.csv"
         ),
         raw_count_tables=[],
-        report_name="(Foote, 2019) Human Fibroblasts DESeq2 Report",
+        run_name="human_dge_demo",
         conditions_source="table",
         conditions_table=LatchFile(
-            "s3://latch-public/welcome/deseq2/galaxy/galaxy_design.csv"
+            "s3://latch-public/nf-core/rnaseq/launchplan_data/human_dge_conditions.csv"
         ),
-        design_matrix_sample_id_column="Sample",
-        design_formula=[["Condition", "explanatory"]],
+        design_matrix_sample_id_column="sample_id",
+        design_formula=[["conditions", "explanatory"]],
     ),
 )
-LaunchPlan(
-    deseq2_wf,
-    "(Knyazev, 2021) Inflammatory Bowel Diseases",
-    dict(
-        raw_count_table=LatchFile(
-            "s3://latch-public/welcome/deseq2/ibd/ibd_counts.csv"
-        ),
-        raw_count_tables=[],
-        report_name="(Knyazev, 2021) Inflammatory Bowel Diseases DESeq2 Report",
-        conditions_source="table",
-        conditions_table=LatchFile(
-            "s3://latch-public/welcome/deseq2/ibd/ibd_design.csv"
-        ),
-        design_matrix_sample_id_column="Sample",
-        design_formula=[["Condition", "explanatory"]],
-    ),
-)
+
+# LaunchPlan(
+#     deseq2_wf,
+#     "(Foote, 2019) Human Fibroblasts",
+#     dict(
+#         raw_count_table=LatchFile(
+#             "s3://latch-public/welcome/deseq2/galaxy/galaxy_counts.tsv"
+#         ),
+#         raw_count_tables=[],
+#         run_name="(Foote, 2019) Human Fibroblasts DESeq2 Report",
+#         conditions_source="table",
+#         conditions_table=LatchFile(
+#             "s3://latch-public/welcome/deseq2/galaxy/galaxy_design.csv"
+#         ),
+#         design_matrix_sample_id_column="Sample",
+#         design_formula=[["Condition", "explanatory"]],
+#     ),
+# )
+
+# LaunchPlan(
+#     deseq2_wf,
+#     "(Knyazev, 2021) Inflammatory Bowel Diseases",
+#     dict(
+#         raw_count_table=LatchFile(
+#             "s3://latch-public/welcome/deseq2/ibd/ibd_counts.csv"
+#         ),
+#         raw_count_tables=[],
+#         run_name="(Knyazev, 2021) Inflammatory Bowel Diseases DESeq2 Report",
+#         conditions_source="table",
+#         conditions_table=LatchFile(
+#             "s3://latch-public/welcome/deseq2/ibd/ibd_design.csv"
+#         ),
+#         design_matrix_sample_id_column="Sample",
+#         design_formula=[["Condition", "explanatory"]],
+#     ),
+# )
